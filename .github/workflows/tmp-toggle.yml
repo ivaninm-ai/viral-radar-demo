@@ -1,0 +1,51 @@
+name: TMP Toggle Competitor
+
+# Throwaway helper: flips competitors.active so the active-filter behaviour can
+# be tested end to end. Delete once the test is done.
+
+on:
+  workflow_dispatch:
+    inputs:
+      username:
+        description: competitor username
+        required: true
+      active:
+        description: "true or false"
+        required: true
+
+jobs:
+  toggle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Flip the flag
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TARGET_USER: ${{ inputs.username }}
+          TARGET_ACTIVE: ${{ inputs.active }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          base = os.environ["SUPABASE_URL"].rstrip("/")
+          key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+          user = os.environ["TARGET_USER"].strip()
+          want = os.environ["TARGET_ACTIVE"].strip().lower() == "true"
+          url = f"{base}/rest/v1/competitors?username=eq.{urllib.parse.quote(user)}"
+          req = urllib.request.Request(
+              url, data=json.dumps({"active": want}).encode(),
+              headers={"apikey": key, "Content-Type": "application/json",
+                       "Prefer": "return=representation"},
+              method="PATCH")
+          with urllib.request.urlopen(req, timeout=30) as resp:
+              print("PATCH ->", resp.read().decode())
+          req2 = urllib.request.Request(
+              f"{base}/rest/v1/competitors?select=username,active&order=active.desc,username",
+              headers={"apikey": key})
+          with urllib.request.urlopen(req2, timeout=30) as resp:
+              rows = json.loads(resp.read())
+          act = [r["username"] for r in rows if r["active"]]
+          print(f"active now ({len(act)}): {', '.join(act)}")
+          PY
